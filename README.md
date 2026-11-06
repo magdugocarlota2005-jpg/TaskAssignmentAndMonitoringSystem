@@ -46,6 +46,11 @@ The **Task Assignment and Monitoring System (TAMS)** provides a centralized work
    - **Due Soon Tasks** (next 48 hours)
    - Live activity audit stream sidebar
    - Multi-facet search and filter by status, priority, and assignee
+9. **Message Notifications & Team Discussions**  
+   - **Direct & Broadcast Message Notifications**: Compose and send targeted message notifications to individual team members or broadcast to the entire team.
+   - **Task Discussions**: In-task message threads with instant notifications delivered to assigned members, task creators, and team leaders.
+   - **Live Notification Alerts**: Real-time background polling with interactive toast notifications, synthesized Web Audio chime, bell badge counters, and browser desktop notifications.
+   - **Integrated Audit Trail**: Task messages are automatically preserved in the task audit history with actor details and timestamps.
 
 ---
 
@@ -60,6 +65,8 @@ The **Task Assignment and Monitoring System (TAMS)** provides a centralized work
 | **Delete Tasks** | ✅ Yes | ❌ No | ❌ No |
 | **Update Task Status** | ✅ All Tasks | ✅ All Tasks | ✅ Assigned Tasks Only |
 | **View Task History & Audit Trail** | ✅ All Tasks | ✅ All Tasks | ✅ Assigned Tasks Only |
+| **Send Message Notifications** | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Task Discussions & Messaging** | ✅ All Tasks | ✅ All Tasks | ✅ Assigned Tasks Only |
 | **Dashboard Scope** | System-wide | Team-wide | Assigned Tasks |
 
 ---
@@ -165,6 +172,24 @@ flowchart TD
     AD --> AE[Show total, pending, completed, and overdue tasks]
     AE --> AF([End / Continue using system])
 ```
+
+---
+
+## 🚀 CI/CD & Automated FTP Deployment
+
+This repository includes an automated GitHub Actions pipeline located at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
+
+1. **Continuous Integration (CI)**:
+   - Sets up PHP 8.2 environment.
+   - Automatically scans and lints all PHP files (`php -l`) to catch syntax errors before deployment.
+2. **Continuous Deployment (CD)**:
+   - On successful push to `main` (or manual trigger via GitHub Actions tab), syncs files directly to your web host via FTP.
+   - Requires the following repository secrets under **GitHub Repository Settings > Secrets and variables > Actions**:
+     - `FTP_SERVER`: Your FTP server hostname or IP (e.g. `ftpupload.net` or `ftp.yourdomain.com`).
+     - `FTP_USERNAME`: Your FTP account username.
+     - `FTP_PASSWORD`: Your FTP account password.
+     - *(Optional)* `FTP_SERVER_DIR`: Destination directory on server (e.g. `public_html/` or `htdocs/`, default: `./`).
+     - *(Optional)* `FTP_PROTOCOL`: Protocol (`ftp` or `ftps`, default: `ftp`).
 
 ---
 

@@ -16,7 +16,7 @@ $currentUser = currentUser();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= h(APP_NAME) ?></title>
-    <link rel="stylesheet" href="assets/css/app.css">
+    <link rel="stylesheet" href="assets/css/app.css?v=<?= filemtime(__DIR__ . '/assets/css/app.css') ?>">
 </head>
 <body>
 
@@ -65,6 +65,11 @@ $currentUser = currentUser();
             </div>
 
             <div class="user-menu">
+                <!-- Send Message Quick Action -->
+                <button class="btn btn-sm btn-secondary" onclick="TAMS.openSendMessageModal()" title="Send Message Notification" style="gap:0.35rem; display:inline-flex; align-items:center;">
+                    <span>✉️</span> <span class="hide-mobile">Message</span>
+                </button>
+
                 <!-- Notifications Bell -->
                 <div style="position:relative;">
                     <button class="notif-btn" id="notif-btn" title="Notifications">
@@ -74,10 +79,18 @@ $currentUser = currentUser();
 
                     <div class="notif-dropdown" id="notif-dropdown">
                         <div class="notif-header">
-                            <span style="font-weight:700; color:#fff; font-size:0.875rem;">Notifications</span>
-                            <button class="btn btn-sm btn-secondary" onclick="TAMS.markAllNotificationsRead()" style="font-size:0.7rem; padding:0.2rem 0.5rem;">
-                                Mark all read
-                            </button>
+                            <div>
+                                <span style="font-weight:700; color:#fff; font-size:0.875rem;">Notifications</span>
+                                <span id="notif-unread-tag" style="display:none; font-size:0.7rem; background:rgba(79,70,229,0.25); color:#818cf8; padding:0.1rem 0.4rem; border-radius:999px; margin-left:0.3rem;">0 unread</span>
+                            </div>
+                            <div style="display:flex; gap:0.35rem;">
+                                <button class="btn btn-sm btn-secondary" onclick="TAMS.markAllNotificationsRead()" style="font-size:0.7rem; padding:0.2rem 0.5rem;">
+                                    Mark all read
+                                </button>
+                                <button class="btn btn-sm btn-primary" onclick="TAMS.openSendMessageModal()" style="font-size:0.7rem; padding:0.2rem 0.5rem;" title="Compose new message">
+                                    + Compose
+                                </button>
+                            </div>
                         </div>
                         <div class="notif-list" id="notif-list">
                             <div style="padding:1.5rem; text-align:center; color:var(--text-dim); font-size:0.85rem;">
@@ -141,6 +154,10 @@ $currentUser = currentUser();
                     </div>
 
                     <div class="header-actions">
+                        <button class="btn btn-secondary" onclick="TAMS.openSendMessageModal()" title="Send Message Notification to User or Team">
+                            <span>✉️</span> Message Team
+                        </button>
+
                         <?php if (in_array($currentUser['role'], ['admin', 'team_leader'])): ?>
                             <button class="btn btn-primary" onclick="TAMS.openCreateTaskModal()">
                                 <span>+</span> Create New Task
@@ -374,14 +391,40 @@ $currentUser = currentUser();
                 <!-- Status Update Buttons -->
                 <div id="td-status-actions" style="background:var(--bg-surface-alt); padding:0.75rem 1rem; border-radius:var(--radius-md); border:1px solid var(--border-color); margin-bottom:1.5rem;"></div>
 
-                <!-- Audit History Timeline -->
-                <div>
-                    <label class="form-label" style="font-size:0.95rem; color:#fff; border-bottom:1px solid var(--border-color); padding-bottom:0.4rem;">
-                        📜 Task Audit Trail &amp; History
-                    </label>
+                <!-- Modal Tabs: Audit Trail & Task Messages -->
+                <div class="modal-tabs">
+                    <button type="button" class="modal-tab-btn active" id="tab-btn-audit" onclick="TAMS.switchTaskModalTab('audit')">
+                        📜 Task Audit Trail
+                    </button>
+                    <button type="button" class="modal-tab-btn" id="tab-btn-messages" onclick="TAMS.switchTaskModalTab('messages')">
+                        💬 Task Messages &amp; Discussion <span id="td-messages-count" style="font-size:0.7rem; background:rgba(139,92,246,0.25); color:#c4b5fd; padding:0.1rem 0.4rem; border-radius:999px;">0</span>
+                    </button>
+                </div>
+
+                <!-- Tab 1: Audit History Timeline -->
+                <div class="modal-tab-pane active" id="tab-pane-audit">
                     <div class="timeline" id="td-timeline">
                         <!-- Populated by app.js -->
                     </div>
+                </div>
+
+                <!-- Tab 2: Task Messages / Comments & Notifications -->
+                <div class="modal-tab-pane" id="tab-pane-messages">
+                    <div class="task-messages-container" id="td-messages-list">
+                        <!-- Populated by app.js -->
+                    </div>
+                    
+                    <form id="task-message-form" onsubmit="TAMS.submitTaskMessage(event)" style="margin-top:0.75rem;">
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="text" id="task-message-input" class="form-input" placeholder="Type a message or note to notify team..." style="flex:1;" required autocomplete="off">
+                            <button type="submit" class="btn btn-primary" id="btn-send-task-msg" style="white-space:nowrap;">
+                                <span>➤</span> Send
+                            </button>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-dim); margin-top:4px;">
+                            💡 Sending a message here automatically sends an in-app message notification to all task collaborators.
+                        </div>
+                    </form>
                 </div>
             </div>
             <div class="modal-footer">
@@ -593,8 +636,94 @@ $currentUser = currentUser();
         </div>
     </div>
 
+    <!-- 6. Send Message Notification Modal -->
+    <div class="modal-backdrop" id="send-message-modal">
+        <div class="modal-box" style="max-width: 520px;">
+            <div class="modal-header">
+                <div>
+                    <h3>✉️ Send Message Notification</h3>
+                    <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">Notify a team member or broadcast to all</div>
+                </div>
+                <button class="modal-close" onclick="TAMS.closeModal('send-message-modal')">&times;</button>
+            </div>
+            <form id="send-message-form" onsubmit="TAMS.submitSendMessage(event)">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="msg-recipient">Recipient *</label>
+                        <select id="msg-recipient" name="receiver_id" class="form-select" required>
+                            <option value="0">📢 Broadcast to All Active Users</option>
+                            <!-- Populated with users -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="msg-task">Related Task (Optional)</label>
+                        <select id="msg-task" name="task_id" class="form-select">
+                            <option value="">-- None / General Message --</option>
+                            <!-- Populated with tasks -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="msg-title">Subject / Title (Optional)</label>
+                        <input type="text" id="msg-title" name="title" class="form-input" placeholder="e.g. Schedule update, Question about requirements">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="msg-content">Message Content *</label>
+                        <textarea id="msg-content" name="message" class="form-textarea" rows="4" placeholder="Type your message notification here..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="TAMS.closeModal('send-message-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-send-message">
+                        <span>✉️</span> Send Message Notification
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 7. View Message Modal -->
+    <div class="modal-backdrop" id="view-message-modal">
+        <div class="modal-box" style="max-width: 500px;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="vm-title">💬 Message Notification</h3>
+                    <div id="vm-date" style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;"></div>
+                </div>
+                <button class="modal-close" onclick="TAMS.closeModal('view-message-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem; padding-bottom:0.75rem; border-bottom:1px solid var(--border-color);">
+                    <div class="avatar" id="vm-sender-avatar" style="width:38px; height:38px; font-size:0.875rem;"></div>
+                    <div>
+                        <div id="vm-sender-name" style="font-weight:600; color:#fff;"></div>
+                        <div id="vm-sender-role" style="font-size:0.75rem; color:var(--text-muted);"></div>
+                    </div>
+                </div>
+
+                <div id="vm-task-box" style="margin-bottom:0.75rem; display:none;">
+                    <span style="font-size:0.75rem; color:var(--text-dim);">Regarding Task: </span>
+                    <button type="button" class="btn btn-sm btn-secondary" id="vm-task-btn" style="font-size:0.75rem; padding:0.2rem 0.5rem;"></button>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" style="font-size:0.8rem; color:var(--text-dim);">Message</label>
+                    <div id="vm-content" style="background:var(--bg-surface); padding:1rem; border-radius:var(--radius-md); font-size:0.9rem; color:var(--text-main); line-height:1.5; white-space:pre-wrap; border:1px solid var(--border-color);"></div>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:space-between;">
+                <button type="button" class="btn btn-secondary" onclick="TAMS.closeModal('view-message-modal')">Close</button>
+                <button type="button" class="btn btn-primary" id="vm-reply-btn" onclick="TAMS.replyToCurrentMessage()">
+                    <span>↩</span> Reply
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
-    <script src="assets/js/app.js"></script>
+    <script src="assets/js/app.js?v=<?= filemtime(__DIR__ . '/assets/js/app.js') ?>"></script>
     <script>
         function showView(viewName) {
             const tasksView = document.getElementById('view-tasks');

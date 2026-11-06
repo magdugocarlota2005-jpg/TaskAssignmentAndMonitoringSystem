@@ -4,8 +4,9 @@
  * Task Assignment and Monitoring System (TAMS)
  */
 
-// Timezone
-date_default_timezone_set('UTC');
+// Timezone configuration (e.g. 'UTC', 'America/New_York', 'Asia/Manila', 'Europe/London')
+define('APP_TIMEZONE', 'UTC');
+date_default_timezone_set(APP_TIMEZONE);
 
 // Application definitions
 define('APP_NAME', 'Task Assignment & Monitoring System');
@@ -14,23 +15,29 @@ define('BASE_PATH', dirname(__DIR__));
 define('DATA_PATH', BASE_PATH . DIRECTORY_SEPARATOR . 'data');
 define('SQLITE_FILE', DATA_PATH . DIRECTORY_SEPARATOR . 'tams.sqlite');
 
-// Ensure writable local session storage directory
+// Threshold in days for tasks to be flagged as "Approaching Deadline" (default: 2 days / 48 hrs)
+define('APPROACHING_DEADLINE_DAYS', 2);
+
+// Session configuration
 $sessDir = DATA_PATH . DIRECTORY_SEPARATOR . 'sessions';
 if (!is_dir($sessDir)) {
     @mkdir($sessDir, 0777, true);
 }
-if (is_dir($sessDir)) {
-    session_save_path($sessDir);
+if (is_dir($sessDir) && is_writable($sessDir)) {
+    @session_save_path($sessDir);
 }
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    @session_start();
 }
 
 // Database configuration
-// Change to 'mysql' if you wish to use MySQL in XAMPP
+// Driver options:
+// - 'sqlite' : Zero-setup file-based database stored in data/tams.sqlite (Recommended for quick start)
+// - 'mysql'  : MySQL / MariaDB via XAMPP (requires MySQL service started in XAMPP Control Panel)
 define('DB_DRIVER', 'sqlite'); 
 define('DB_HOST', '127.0.0.1');
+define('DB_PORT', 3306);
 define('DB_NAME', 'tams_db');
 define('DB_USER', 'root');
 define('DB_PASS', '');
@@ -107,13 +114,14 @@ function isTaskOverdue($deadline, $status) {
     if (empty($deadline)) {
         return false;
     }
-    $now = new DateTime('now', new DateTimeZone('UTC'));
-    $due = new DateTime($deadline, new DateTimeZone('UTC'));
+    $tzName = defined('APP_TIMEZONE') ? APP_TIMEZONE : 'UTC';
+    $now = new DateTime('now', new DateTimeZone($tzName));
+    $due = new DateTime($deadline, new DateTimeZone($tzName));
     return $due < $now;
 }
 
 /**
- * Check if task deadline is approaching (within 48 hours)
+ * Check if task deadline is approaching (within configured threshold, e.g. 48 hours)
  */
 function isDeadlineApproaching($deadline, $status) {
     if ($status === 'Completed') {
@@ -122,14 +130,16 @@ function isDeadlineApproaching($deadline, $status) {
     if (empty($deadline)) {
         return false;
     }
-    $now = new DateTime('now', new DateTimeZone('UTC'));
-    $due = new DateTime($deadline, new DateTimeZone('UTC'));
+    $tzName = defined('APP_TIMEZONE') ? APP_TIMEZONE : 'UTC';
+    $now = new DateTime('now', new DateTimeZone($tzName));
+    $due = new DateTime($deadline, new DateTimeZone($tzName));
     $diff = $now->diff($due);
     
     // If already overdue
     if ($due < $now) {
         return false;
     }
-    // Approaching if within 48 hours
-    return ($diff->days <= 2);
+    // Approaching if within configured threshold days
+    $threshold = defined('APPROACHING_DEADLINE_DAYS') ? APPROACHING_DEADLINE_DAYS : 2;
+    return ($diff->days <= $threshold);
 }

@@ -101,7 +101,7 @@ jsonResponse([
     'user' => [
         'id' => $currentUser['id'],
         'name' => $currentUser['name'],
-        'username' => $currentUser['username'],
+        'username' => $currentUser['username'] ?? '',
         'role' => $currentUser['role'],
         'avatar_color' => $currentUser['avatar_color'] ?? '#4f46e5'
     ],

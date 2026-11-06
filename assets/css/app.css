@@ -1239,3 +1239,237 @@ a:hover {
     align-items: flex-start;
   }
 }
+
+/* ==================== MESSAGE NOTIFICATIONS & DISCUSSION STYLES ==================== */
+
+@keyframes bell-ring {
+  0% { transform: rotate(0); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-14deg); }
+  30% { transform: rotate(10deg); }
+  40% { transform: rotate(-10deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-6deg); }
+  70% { transform: rotate(2deg); }
+  80% { transform: rotate(-2deg); }
+  100% { transform: rotate(0); }
+}
+
+.notif-btn.ringing {
+  animation: bell-ring 1s ease-in-out;
+  background: rgba(139, 92, 246, 0.2);
+  border-color: #8b5cf6;
+}
+
+.notif-item {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.825rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.notif-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.notif-item.unread {
+  background: rgba(79, 70, 229, 0.09);
+  border-left: 3px solid var(--primary);
+}
+
+.notif-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  background: var(--bg-surface-alt);
+}
+
+.notif-type-message .notif-icon-box {
+  background: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;
+}
+
+.notif-type-task .notif-icon-box {
+  background: rgba(79, 70, 229, 0.18);
+  color: #818cf8;
+}
+
+.notif-type-completed .notif-icon-box {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+
+.notif-type-warning .notif-icon-box {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
+.notif-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-item-title {
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.notif-item-text {
+  color: var(--text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.notif-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* Modal Tabs */
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1.25rem;
+  gap: 0.5rem;
+}
+
+.modal-tab-btn {
+  background: none;
+  border: none;
+  padding: 0.6rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.modal-tab-btn:hover {
+  color: #fff;
+}
+
+.modal-tab-btn.active {
+  color: #818cf8;
+  border-bottom-color: var(--primary);
+}
+
+.modal-tab-pane {
+  display: none;
+}
+
+.modal-tab-pane.active {
+  display: block;
+}
+
+/* Task Messages & Chat Thread */
+.task-messages-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.5rem 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.task-msg-bubble {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  max-width: 85%;
+}
+
+.task-msg-bubble.mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.task-msg-content {
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.task-msg-bubble.mine .task-msg-content {
+  background: rgba(79, 70, 229, 0.18);
+  border-color: rgba(79, 70, 229, 0.4);
+  color: #e0e7ff;
+}
+
+.task-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  margin-bottom: 3px;
+}
+
+.task-msg-author {
+  font-weight: 600;
+  color: #fff;
+}
+
+.task-msg-time {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+/* Message Toast Notification */
+.toast.toast-message {
+  border-left: 4px solid #8b5cf6;
+  background: rgba(30, 41, 59, 0.98);
+  cursor: pointer;
+  max-width: 380px;
+}
+
+.toast.toast-message:hover {
+  border-color: #a78bfa;
+}
+
+.toast-msg-title {
+  font-weight: 700;
+  color: #fff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.toast-msg-text {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+

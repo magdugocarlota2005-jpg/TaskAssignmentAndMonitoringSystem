@@ -13,6 +13,10 @@ const TAMS = {
     assigneeFilter: '',
     searchQuery: '',
     activeTaskId: null,
+    lastNotifId: 0,
+    notifPollInterval: null,
+    currentViewingSenderId: null,
+    currentViewingSenderName: null,
 
     init() {
         this.bindEvents();
@@ -104,6 +108,8 @@ const TAMS = {
                 this.updateUserUI();
                 await this.loadAssigneesDropdown();
                 await this.refreshAll();
+                this.startNotificationPolling();
+                this.requestNotificationPermission();
             } else {
                 window.location.href = 'login.php';
             }
@@ -509,6 +515,10 @@ const TAMS = {
             } else {
                 timelineEl.innerHTML = '<p class="text-dim">No history recorded.</p>';
             }
+
+            // Default to audit tab & load messages
+            this.switchTaskModalTab('audit');
+            await this.loadTaskMessages(taskId);
         } catch (err) {
             console.error('Error fetching task details', err);
             titleEl.textContent = 'Error loading task';
@@ -528,6 +538,7 @@ const TAMS = {
             else if (item.action_type === 'completed') icon = '✓';
             else if (item.action_type === 'status_change') icon = '🔄';
             else if (item.action_type === 'details_updated') icon = '✏️';
+            else if (item.action_type === 'message') icon = '💬';
 
             return `
                 <div class="timeline-item">
@@ -751,6 +762,9 @@ const TAMS = {
                     </td>
                     <td>
                         <div style="display:flex; gap:0.4rem;">
+                            <button class="btn btn-secondary btn-sm" onclick="TAMS.openSendMessageModal(${u.id}, '${this.escapeHtml(u.name)}')" title="Send Message Notification to ${this.escapeHtml(u.name)}">
+                                ✉️ Message
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="TAMS.openEditUserModal(${JSON.stringify(u).replace(/"/g, '&quot;')})">
                                 Edit
                             </button>
@@ -860,42 +874,333 @@ const TAMS = {
         }
     },
 
-    // In-app Notifications
+    // ==================== IN-APP NOTIFICATIONS & REAL-TIME POLLING ====================
+
+    startNotificationPolling() {
+        if (this.notifPollInterval) {
+            clearInterval(this.notifPollInterval);
+        }
+
+        // Poll every 8 seconds for real-time notifications
+        this.notifPollInterval = setInterval(async () => {
+            if (!this.user) return;
+            try {
+                const res = await fetch(`api/notifications.php?action=check_new&last_id=${this.lastNotifId || 0}`);
+                const data = await res.json();
+                if (!data.success) return;
+
+                if (data.latest_id > (this.lastNotifId || 0)) {
+                    this.lastNotifId = data.latest_id;
+                }
+
+                if (data.new_notifications && data.new_notifications.length > 0) {
+                    // Update bell badge
+                    const badge = document.getElementById('notif-badge');
+                    if (badge) {
+                        badge.textContent = data.unread_count > 99 ? '99+' : data.unread_count;
+                        badge.style.display = data.unread_count > 0 ? 'flex' : 'none';
+                    }
+
+                    // Bell animation
+                    const notifBtn = document.getElementById('notif-btn');
+                    if (notifBtn) {
+                        notifBtn.classList.add('ringing');
+                        setTimeout(() => notifBtn.classList.remove('ringing'), 1000);
+                    }
+
+                    // Audio chime
+                    this.playNotificationChime();
+
+                    // Show toast popup and browser notification for each new notification
+                    data.new_notifications.forEach(n => {
+                        this.showToastNotification(n);
+                        this.showBrowserNotification(n);
+                    });
+
+                    // Refresh notifications list and metrics
+                    await this.loadNotifications();
+                    await this.loadDashboard();
+                    if (this.activeTaskId) {
+                        await this.loadTaskMessages(this.activeTaskId);
+                    }
+                }
+            } catch (err) {
+                // Silently ignore background poll errors
+            }
+        }, 8000);
+    },
+
+    playNotificationChime() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587.33, now); // D5
+            osc.frequency.setValueAtTime(880.00, now + 0.12); // A5
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.15, now + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.45);
+        } catch (e) {
+            // Audio context policy
+        }
+    },
+
+    requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            try {
+                Notification.requestPermission();
+            } catch (e) {}
+        }
+    },
+
+    showBrowserNotification(n) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+                const bNotif = new Notification(n.title, {
+                    body: n.message,
+                    icon: 'favicon.ico'
+                });
+                bNotif.onclick = () => {
+                    window.focus();
+                    this.handleNotificationClick(n.id, n.task_id || null, n.type || 'general');
+                };
+            } catch (e) {}
+        }
+    },
+
+    showToastNotification(notif) {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-message';
+
+        const isMsg = notif.type === 'message' || (notif.title && notif.title.includes('Message'));
+        const icon = isMsg ? '💬' : (notif.title && notif.title.includes('Completed') ? '✓' : '🔔');
+
+        toast.innerHTML = `
+            <div style="font-size:1.25rem; flex-shrink:0;">${icon}</div>
+            <div style="flex:1; min-width:0;">
+                <div class="toast-msg-title">
+                    <span>${this.escapeHtml(notif.title)}</span>
+                </div>
+                <div class="toast-msg-text">${this.escapeHtml(notif.message)}</div>
+            </div>
+            <button class="btn btn-sm btn-primary" style="font-size:0.7rem; padding:0.25rem 0.6rem; flex-shrink:0;">
+                View
+            </button>
+        `;
+
+        toast.onclick = () => {
+            this.handleNotificationClick(notif.id, notif.task_id || null, notif.type || 'general');
+            toast.remove();
+        };
+
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            toast.style.transition = 'all 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 7000);
+    },
+
     async loadNotifications() {
         try {
             const res = await fetch('api/notifications.php?action=list');
             const data = await res.json();
             if (!data.success) return;
 
+            this.notifications = data.notifications || [];
+
             const badge = document.getElementById('notif-badge');
             const list = document.getElementById('notif-list');
+            const unreadTag = document.getElementById('notif-unread-tag');
 
             if (badge) {
                 if (data.unread_count > 0) {
-                    badge.textContent = data.unread_count;
+                    badge.textContent = data.unread_count > 99 ? '99+' : data.unread_count;
                     badge.style.display = 'flex';
                 } else {
                     badge.style.display = 'none';
                 }
             }
 
+            if (unreadTag) {
+                if (data.unread_count > 0) {
+                    unreadTag.textContent = `${data.unread_count} unread`;
+                    unreadTag.style.display = 'inline-block';
+                } else {
+                    unreadTag.style.display = 'none';
+                }
+            }
+
+            if (this.notifications.length > 0) {
+                const maxId = Math.max(...this.notifications.map(n => parseInt(n.id) || 0));
+                if (maxId > this.lastNotifId) {
+                    this.lastNotifId = maxId;
+                }
+            }
+
             if (list) {
-                if (!data.notifications || data.notifications.length === 0) {
+                if (!this.notifications || this.notifications.length === 0) {
                     list.innerHTML = `<div style="padding:1.5rem; text-align:center; color:var(--text-dim); font-size:0.85rem;">No notifications yet.</div>`;
                     return;
                 }
 
-                list.innerHTML = data.notifications.map(n => `
-                    <div class="notif-item ${n.is_read ? '' : 'unread'}" onclick="TAMS.markNotificationRead(${n.id}, ${n.task_id || 'null'})">
-                        <div style="font-weight:600; color:#fff; margin-bottom:2px;">${this.escapeHtml(n.title)}</div>
-                        <div style="color:var(--text-muted);">${this.escapeHtml(n.message)}</div>
-                        <div style="font-size:0.7rem; color:var(--text-dim); margin-top:4px;">${n.created_at_formatted}</div>
-                    </div>
-                `).join('');
+                list.innerHTML = this.notifications.map(n => {
+                    let typeClass = 'notif-type-general';
+                    let icon = '🔔';
+                    if (n.type === 'message' || (n.title && n.title.includes('Message'))) {
+                        typeClass = 'notif-type-message';
+                        icon = '💬';
+                    } else if (n.title && n.title.includes('Completed')) {
+                        typeClass = 'notif-type-completed';
+                        icon = '✓';
+                    } else if (n.title && n.title.includes('Assigned')) {
+                        typeClass = 'notif-type-task';
+                        icon = '📋';
+                    } else if (n.title && (n.title.includes('Overdue') || n.title.includes('Warning') || n.title.includes('Approaching'))) {
+                        typeClass = 'notif-type-warning';
+                        icon = '⚠️';
+                    }
+
+                    const senderAvatar = n.sender_name ? `
+                        <div class="avatar" style="width:28px; height:28px; font-size:0.7rem; background:${n.sender_avatar_color || '#8b5cf6'}; flex-shrink:0;">
+                            ${n.sender_name.charAt(0).toUpperCase()}
+                        </div>
+                    ` : `
+                        <div class="notif-icon-box">
+                            ${icon}
+                        </div>
+                    `;
+
+                    return `
+                        <div class="notif-item ${n.is_read ? '' : 'unread'} ${typeClass}" onclick="TAMS.handleNotificationClick(${n.id})">
+                            ${senderAvatar}
+                            <div class="notif-item-body">
+                                <div class="notif-item-title">
+                                    <span>${this.escapeHtml(n.title)}</span>
+                                    ${!n.is_read ? '<span style="width:6px; height:6px; border-radius:50%; background:var(--primary); display:inline-block;"></span>' : ''}
+                                </div>
+                                <div class="notif-item-text">${this.escapeHtml(n.message)}</div>
+                                <div class="notif-item-meta">
+                                    <span>${n.created_at_formatted}</span>
+                                    ${n.task_title ? `<span style="color:var(--text-muted);">• ${this.escapeHtml(n.task_title)}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             }
         } catch (err) {
             console.error('Error loading notifications', err);
         }
+    },
+
+    async handleNotificationClick(notifId) {
+        try {
+            // Close dropdown immediately
+            const dropdown = document.getElementById('notif-dropdown');
+            if (dropdown) dropdown.classList.remove('show');
+
+            // Find notification in cache
+            let notif = (this.notifications || []).find(n => n.id == notifId);
+
+            // Mark as read in background without blocking UI
+            fetch('api/notifications.php?action=mark_read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: notifId })
+            }).then(() => this.loadNotifications());
+
+            if (!notif) {
+                const res = await fetch('api/notifications.php?action=list');
+                const data = await res.json();
+                if (data.success && data.notifications) {
+                    this.notifications = data.notifications;
+                    notif = this.notifications.find(n => n.id == notifId);
+                }
+            }
+
+            if (!notif) return;
+
+            // If message notification or no task_id, open message notification modal
+            if (notif.type === 'message' || !notif.task_id) {
+                this.openNotificationModal(notif);
+            } else {
+                // Task update notification with task_id
+                try {
+                    await this.viewTaskDetails(notif.task_id);
+                } catch (e) {
+                    this.openNotificationModal(notif);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to handle notification click', err);
+        }
+    },
+
+    openNotificationModal(notif) {
+        if (!notif) return;
+        this.currentViewingSenderId = notif.sender_id || null;
+        this.currentViewingSenderName = notif.sender_name || 'Sender';
+
+        const titleEl = document.getElementById('vm-title');
+        const dateEl = document.getElementById('vm-date');
+        const senderNameEl = document.getElementById('vm-sender-name');
+        const senderRoleEl = document.getElementById('vm-sender-role');
+        const senderAvatarEl = document.getElementById('vm-sender-avatar');
+        const contentEl = document.getElementById('vm-content');
+        const taskBoxEl = document.getElementById('vm-task-box');
+        const taskBtnEl = document.getElementById('vm-task-btn');
+        const replyBtn = document.getElementById('vm-reply-btn');
+
+        if (titleEl) titleEl.textContent = notif.title || 'Message Notification';
+        if (dateEl) dateEl.textContent = notif.created_at_formatted || 'Just now';
+        if (senderNameEl) senderNameEl.textContent = notif.sender_name || 'System Notification';
+        if (senderRoleEl) senderRoleEl.textContent = notif.sender_role ? this.formatRole(notif.sender_role) : 'System';
+        if (senderAvatarEl) {
+            senderAvatarEl.textContent = notif.sender_name ? notif.sender_name.charAt(0).toUpperCase() : '💬';
+            senderAvatarEl.style.backgroundColor = notif.sender_avatar_color || '#8b5cf6';
+        }
+        if (contentEl) contentEl.textContent = notif.message;
+
+        if (notif.task_id && taskBoxEl && taskBtnEl) {
+            taskBoxEl.style.display = 'block';
+            taskBtnEl.textContent = notif.task_title ? `📋 #${notif.task_id}: ${notif.task_title}` : `Open Task #${notif.task_id}`;
+            taskBtnEl.onclick = () => {
+                this.closeModal('view-message-modal');
+                this.viewTaskDetails(notif.task_id);
+            };
+        } else if (taskBoxEl) {
+            taskBoxEl.style.display = 'none';
+        }
+
+        if (replyBtn) {
+            replyBtn.style.display = notif.sender_id ? 'inline-flex' : 'none';
+        }
+
+        this.openModal('view-message-modal');
     },
 
     async markNotificationRead(notifId, taskId = null) {
@@ -925,6 +1230,260 @@ const TAMS = {
             this.showToast('All notifications marked as read', 'info');
         } catch (err) {
             console.error('Error marking all read', err);
+        }
+    },
+
+    // ==================== TASK MESSAGES & DISCUSSION ====================
+
+    switchTaskModalTab(tab) {
+        const auditBtn = document.getElementById('tab-btn-audit');
+        const msgBtn = document.getElementById('tab-btn-messages');
+        const auditPane = document.getElementById('tab-pane-audit');
+        const msgPane = document.getElementById('tab-pane-messages');
+
+        if (tab === 'audit') {
+            if (auditBtn) auditBtn.classList.add('active');
+            if (msgBtn) msgBtn.classList.remove('active');
+            if (auditPane) auditPane.classList.add('active');
+            if (msgPane) msgPane.classList.remove('active');
+        } else {
+            if (msgBtn) msgBtn.classList.add('active');
+            if (auditBtn) auditBtn.classList.remove('active');
+            if (msgPane) msgPane.classList.add('active');
+            if (auditPane) auditPane.classList.remove('active');
+
+            if (this.activeTaskId) {
+                this.loadTaskMessages(this.activeTaskId);
+            }
+            const input = document.getElementById('task-message-input');
+            if (input) setTimeout(() => input.focus(), 150);
+        }
+    },
+
+    async loadTaskMessages(taskId) {
+        const listEl = document.getElementById('td-messages-list');
+        const countEl = document.getElementById('td-messages-count');
+        if (!listEl) return;
+
+        try {
+            const res = await fetch(`api/notifications.php?action=task_messages&task_id=${taskId}`);
+            const data = await res.json();
+            if (!data.success) return;
+
+            const messages = data.messages || [];
+            if (countEl) countEl.textContent = messages.length;
+
+            if (messages.length === 0) {
+                listEl.innerHTML = `
+                    <div style="padding:1.5rem; text-align:center; color:var(--text-dim); font-size:0.85rem;">
+                        💬 No messages on this task yet. Type a message below to notify task collaborators!
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = messages.map(m => `
+                <div class="task-msg-bubble ${m.is_mine ? 'mine' : ''}">
+                    <div class="avatar" style="width:28px; height:28px; font-size:0.7rem; background:${m.sender_avatar_color || '#6366f1'}; flex-shrink:0;">
+                        ${m.sender_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="task-msg-content">
+                        <div class="task-msg-header">
+                            <span class="task-msg-author">${this.escapeHtml(m.sender_name)}</span>
+                            <span style="font-size:0.65rem; color:var(--text-dim);">(${this.formatRole(m.sender_role)})</span>
+                            <span class="task-msg-time">${m.created_at_formatted}</span>
+                        </div>
+                        <div>${this.escapeHtml(m.message)}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            listEl.scrollTop = listEl.scrollHeight;
+        } catch (err) {
+            console.error('Error loading task messages', err);
+        }
+    },
+
+    async submitTaskMessage(e) {
+        e.preventDefault();
+        if (!this.activeTaskId) return;
+
+        const input = document.getElementById('task-message-input');
+        const text = input ? input.value.trim() : '';
+        if (!text) return;
+
+        const submitBtn = document.getElementById('btn-send-task-msg');
+        if (submitBtn) submitBtn.disabled = true;
+
+        try {
+            const res = await fetch('api/notifications.php?action=send_message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: this.activeTaskId,
+                    message: text
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (input) input.value = '';
+                await this.loadTaskMessages(this.activeTaskId);
+                this.showToast('Message sent! Task collaborators notified.', 'success');
+
+                // Refresh audit history
+                const histRes = await fetch(`api/task_history.php?task_id=${this.activeTaskId}`);
+                const histData = await histRes.json();
+                const timelineEl = document.getElementById('td-timeline');
+                if (histData.success && histData.history && timelineEl) {
+                    this.renderTimeline(histData.history, timelineEl);
+                }
+            } else {
+                this.showToast(data.error || 'Failed to send message', 'error');
+            }
+        } catch (err) {
+            console.error('Send task message error', err);
+            this.showToast('Network error sending message', 'error');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    },
+
+    // ==================== SEND MESSAGE NOTIFICATION MODAL ====================
+
+    async openSendMessageModal(prefillUserId = null, prefillUserName = null, prefillTaskId = null) {
+        // Open modal immediately for instant feedback
+        this.openModal('send-message-modal');
+
+        const form = document.getElementById('send-message-form');
+        if (form) form.reset();
+
+        const recipSelect = document.getElementById('msg-recipient');
+        const taskSelect = document.getElementById('msg-task');
+
+        if (recipSelect) {
+            recipSelect.innerHTML = '<option value="0">📢 Broadcast to All Active Users</option>';
+            try {
+                const res = await fetch('api/users.php?action=assignees');
+                const data = await res.json();
+                if (data.success && data.users) {
+                    data.users.forEach(u => {
+                        if (this.user && u.id == this.user.id) return;
+                        const opt = document.createElement('option');
+                        opt.value = u.id;
+                        opt.textContent = `${u.name} (${this.formatRole(u.role)})`;
+                        recipSelect.appendChild(opt);
+                    });
+                }
+            } catch (e) {}
+
+            if (prefillUserId) {
+                recipSelect.value = prefillUserId;
+            }
+        }
+
+        if (taskSelect) {
+            taskSelect.innerHTML = '<option value="">-- None / General Message --</option>';
+            if (this.tasks && this.tasks.length > 0) {
+                this.tasks.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = `#${t.id}: ${t.title} (${t.status})`;
+                    taskSelect.appendChild(opt);
+                });
+                if (prefillTaskId) taskSelect.value = prefillTaskId;
+            } else {
+                fetch('api/tasks.php?action=list')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.tasks) {
+                            this.tasks = data.tasks;
+                            data.tasks.forEach(t => {
+                                const opt = document.createElement('option');
+                                opt.value = t.id;
+                                opt.textContent = `#${t.id}: ${t.title} (${t.status})`;
+                                taskSelect.appendChild(opt);
+                            });
+                            if (prefillTaskId) taskSelect.value = prefillTaskId;
+                        }
+                    })
+                    .catch(() => {});
+            }
+        }
+
+        setTimeout(() => {
+            const content = document.getElementById('msg-content');
+            if (content) content.focus();
+        }, 150);
+    },
+
+    async submitSendMessage(e) {
+        e.preventDefault();
+        const recip = document.getElementById('msg-recipient').value;
+        const task = document.getElementById('msg-task').value;
+        const title = document.getElementById('msg-title').value.trim();
+        const msg = document.getElementById('msg-content').value.trim();
+
+        if (!msg) {
+            this.showToast('Please enter message content.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btn-send-message');
+        if (btn) btn.disabled = true;
+
+        try {
+            const res = await fetch('api/notifications.php?action=send_message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    receiver_id: recip,
+                    task_id: task || null,
+                    title: title,
+                    message: msg
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.closeModal('send-message-modal');
+                this.showToast(`Message notification sent to ${data.recipient_count} recipient(s)!`, 'success');
+                await this.loadNotifications();
+                if (task && this.activeTaskId == task) {
+                    await this.loadTaskMessages(task);
+                }
+            } else {
+                this.showToast(data.error || 'Failed to send message', 'error');
+            }
+        } catch (err) {
+            console.error('Submit send message error', err);
+            this.showToast('Network error while sending message', 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    async viewDirectMessageByNotifId(notifId) {
+        let notif = (this.notifications || []).find(n => n.id == notifId);
+        if (!notif) {
+            try {
+                const res = await fetch('api/notifications.php?action=list');
+                const data = await res.json();
+                if (data.success && data.notifications) {
+                    this.notifications = data.notifications;
+                    notif = this.notifications.find(n => n.id == notifId);
+                }
+            } catch (e) {}
+        }
+        if (notif) {
+            this.openNotificationModal(notif);
+        }
+    },
+
+    replyToCurrentMessage() {
+        this.closeModal('view-message-modal');
+        if (this.currentViewingSenderId) {
+            this.openSendMessageModal(this.currentViewingSenderId, this.currentViewingSenderName, this.currentViewingTaskId || null);
+        } else {
+            this.openSendMessageModal();
         }
     },
 

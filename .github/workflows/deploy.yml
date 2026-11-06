@@ -1,0 +1,67 @@
+name: CI/CD Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ==========================================
+  # 1. CI JOB: Lint & Validate PHP Files
+  # ==========================================
+  ci-test:
+    name: 🧪 CI - Syntax & Lint Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite, pdo_mysql, json, mbstring
+
+      - name: 🔍 Lint All PHP Files
+        run: |
+          echo "Checking syntax on all project PHP files..."
+          find . -name "*.php" ! -path "./Downloads/*" -exec php -l {} \;
+
+  # ==========================================
+  # 2. CD JOB: Automated FTP Deployment
+  # ==========================================
+  cd-deploy:
+    name: 🚀 CD - Deploy via FTP
+    needs: ci-test
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 📡 Sync Files to Server via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ secrets.FTP_PROTOCOL || 'ftp' }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR || './' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github*/**
+            **/Downloads/**
+            **/node_modules/**
+            *.zip
+            *.md
+            **/scratch/**
+            **/data/sessions/**

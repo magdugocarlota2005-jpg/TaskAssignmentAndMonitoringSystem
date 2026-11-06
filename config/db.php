@@ -23,8 +23,10 @@ function getDbConnection() {
             $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
             $pdo->exec("PRAGMA foreign_keys = ON;");
             initializeDatabase($pdo, 'sqlite');
+            ensureSchemaUpToDate($pdo, 'sqlite');
         } else {
-            $dsn = "mysql:host=" . DB_HOST . ";charset=utf8mb4";
+            $port = defined('DB_PORT') ? DB_PORT : 3306;
+            $dsn = "mysql:host=" . DB_HOST . ";port=" . $port . ";charset=utf8mb4";
             $pdo = new PDO($dsn, DB_USER, DB_PASS, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
@@ -32,6 +34,7 @@ function getDbConnection() {
             $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             $pdo->exec("USE `" . DB_NAME . "`");
             initializeDatabase($pdo, 'mysql');
+            ensureSchemaUpToDate($pdo, 'mysql');
         }
 
         return $pdo;
@@ -107,11 +110,27 @@ function initializeDatabase(PDO $pdo, $driver = 'sqlite') {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 task_id INTEGER,
+                sender_id INTEGER,
+                type TEXT DEFAULT 'general',
                 title TEXT NOT NULL,
                 message TEXT NOT NULL,
                 is_read INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL,
+                receiver_id INTEGER,
+                task_id INTEGER,
+                title TEXT,
+                message TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
             );
         ");
@@ -143,9 +162,9 @@ function initializeDatabase(PDO $pdo, $driver = 'sqlite') {
                 completed_by INT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
-                FOREIGN KEY (completed_by) REFERENCES users(id) ON DELETE SET NULL
+                FOREIGN KEY (`created_by`) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (`assigned_to`) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (`completed_by`) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
             CREATE TABLE IF NOT EXISTS task_history (
@@ -165,11 +184,27 @@ function initializeDatabase(PDO $pdo, $driver = 'sqlite') {
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
                 task_id INT NULL,
+                sender_id INT NULL,
+                type VARCHAR(50) DEFAULT 'general',
                 title VARCHAR(200) NOT NULL,
                 message TEXT NOT NULL,
                 is_read TINYINT(1) DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                sender_id INT NOT NULL,
+                receiver_id INT NULL,
+                task_id INT NULL,
+                title VARCHAR(255) NULL,
+                message TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
@@ -356,4 +391,65 @@ function initializeDatabase(PDO $pdo, $driver = 'sqlite') {
         ':is_read' => 0,
         ':created_at' => $yesterday
     ]);
+}
+
+/**
+ * Migration helper to ensure messages table and notifications schema exist
+ */
+function ensureSchemaUpToDate(PDO $pdo, $driver = 'sqlite') {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    receiver_id INTEGER,
+                    task_id INTEGER,
+                    title TEXT,
+                    message TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+                );
+            ");
+            $cols = $pdo->query("PRAGMA table_info(notifications)")->fetchAll(PDO::FETCH_ASSOC);
+            $colNames = array_column($cols, 'name');
+            if (!in_array('type', $colNames)) {
+                $pdo->exec("ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'general'");
+            }
+            if (!in_array('sender_id', $colNames)) {
+                $pdo->exec("ALTER TABLE notifications ADD COLUMN sender_id INTEGER NULL");
+            }
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `messages` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `sender_id` INT NOT NULL,
+                    `receiver_id` INT NULL,
+                    `task_id` INT NULL,
+                    `title` VARCHAR(255) NULL,
+                    `message` TEXT NOT NULL,
+                    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (`sender_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+                    FOREIGN KEY (`receiver_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+                    FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON DELETE SET NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+            $cols = $pdo->query("SHOW COLUMNS FROM `notifications`")->fetchAll(PDO::FETCH_ASSOC);
+            $colNames = array_column($cols, 'Field');
+            if (!in_array('type', $colNames)) {
+                $pdo->exec("ALTER TABLE `notifications` ADD COLUMN `type` VARCHAR(50) DEFAULT 'general'");
+            }
+            if (!in_array('sender_id', $colNames)) {
+                $pdo->exec("ALTER TABLE `notifications` ADD COLUMN `sender_id` INT NULL");
+            }
+        }
+    } catch (Exception $e) {
+        // Silently continue if already up to date
+    }
 }
