@@ -87,7 +87,7 @@ switch ($action) {
 
         $insert = $pdo->prepare("
             INSERT INTO users (name, username, email, password, role, status, avatar_color, created_at)
-            VALUES (:name, :u, :e, :p, :role, :status, :col, datetime('now'))
+            VALUES (:name, :u, :e, :p, :role, :status, :col, CURRENT_TIMESTAMP)
         ");
         $insert->execute([
             ':name' => $name,

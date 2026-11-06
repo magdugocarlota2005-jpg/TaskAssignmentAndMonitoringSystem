@@ -4,10 +4,6 @@
  * Task Assignment and Monitoring System (TAMS)
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Timezone
 date_default_timezone_set('UTC');
 
@@ -17,6 +13,19 @@ define('APP_VERSION', '1.0.0');
 define('BASE_PATH', dirname(__DIR__));
 define('DATA_PATH', BASE_PATH . DIRECTORY_SEPARATOR . 'data');
 define('SQLITE_FILE', DATA_PATH . DIRECTORY_SEPARATOR . 'tams.sqlite');
+
+// Ensure writable local session storage directory
+$sessDir = DATA_PATH . DIRECTORY_SEPARATOR . 'sessions';
+if (!is_dir($sessDir)) {
+    @mkdir($sessDir, 0777, true);
+}
+if (is_dir($sessDir)) {
+    session_save_path($sessDir);
+}
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Database configuration
 // Change to 'mysql' if you wish to use MySQL in XAMPP

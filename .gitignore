@@ -1,0 +1,9 @@
+# System Sessions & Logs
+/data/sessions/
+*.log
+
+# OS / Editor Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

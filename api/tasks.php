@@ -79,7 +79,7 @@ switch ($action) {
 
         $sql .= " ORDER BY 
             CASE 
-                WHEN t.status != 'Completed' AND t.deadline < datetime('now') THEN 1
+                WHEN t.status != 'Completed' AND t.deadline < CURRENT_TIMESTAMP THEN 1
                 WHEN t.priority = 'Urgent' THEN 2
                 WHEN t.priority = 'High' THEN 3
                 WHEN t.priority = 'Medium' THEN 4
@@ -233,7 +233,7 @@ switch ($action) {
         // Insert task
         $stmt = $pdo->prepare("
             INSERT INTO tasks (title, description, priority, status, created_by, assigned_to, deadline, created_at, updated_at)
-            VALUES (:title, :desc, :prio, 'To Do', :created_by, :assigned_to, :deadline, datetime('now'), datetime('now'))
+            VALUES (:title, :desc, :prio, 'To Do', :created_by, :assigned_to, :deadline, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ");
         $stmt->execute([
             ':title' => $title,
@@ -248,7 +248,7 @@ switch ($action) {
         // Record history: creation
         $histStmt = $pdo->prepare("
             INSERT INTO task_history (task_id, user_id, action_type, description, created_at)
-            VALUES (:task_id, :user_id, 'created', :desc, datetime('now'))
+            VALUES (:task_id, :user_id, 'created', :desc, CURRENT_TIMESTAMP)
         ");
         $histStmt->execute([
             ':task_id' => $taskId,
@@ -267,7 +267,7 @@ switch ($action) {
             // Notify assignee
             $notifStmt = $pdo->prepare("
                 INSERT INTO notifications (user_id, task_id, title, message, created_at)
-                VALUES (:uid, :tid, :title, :msg, datetime('now'))
+                VALUES (:uid, :tid, :title, :msg, CURRENT_TIMESTAMP)
             ");
             $notifStmt->execute([
                 ':uid' => $assignedTo,
@@ -380,7 +380,7 @@ switch ($action) {
             if ($assignedTo) {
                 $notifStmt = $pdo->prepare("
                     INSERT INTO notifications (user_id, task_id, title, message, created_at)
-                    VALUES (:uid, :tid, :title, :msg, datetime('now'))
+                    VALUES (:uid, :tid, :title, :msg, CURRENT_TIMESTAMP)
                 ");
                 $notifStmt->execute([
                     ':uid' => $assignedTo,
@@ -394,7 +394,7 @@ switch ($action) {
         // Update task table
         $updateStmt = $pdo->prepare("
             UPDATE tasks 
-            SET title = :title, description = :desc, priority = :prio, deadline = :deadline, assigned_to = :assigned_to, updated_at = datetime('now')
+            SET title = :title, description = :desc, priority = :prio, deadline = :deadline, assigned_to = :assigned_to, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id
         ");
         $updateStmt->execute([
@@ -409,7 +409,7 @@ switch ($action) {
         // Insert history entries
         $histStmt = $pdo->prepare("
             INSERT INTO task_history (task_id, user_id, action_type, description, old_value, new_value, created_at)
-            VALUES (:task_id, :user_id, :action_type, :description, :old_val, :new_val, datetime('now'))
+            VALUES (:task_id, :user_id, :action_type, :description, :old_val, :new_val, CURRENT_TIMESTAMP)
         ");
         foreach ($changes as $c) {
             $histStmt->execute([
@@ -459,7 +459,7 @@ switch ($action) {
 
         $updateStmt = $pdo->prepare("
             UPDATE tasks 
-            SET status = :status, completed_at = :completed_at, completed_by = :completed_by, updated_at = datetime('now')
+            SET status = :status, completed_at = :completed_at, completed_by = :completed_by, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id
         ");
         $updateStmt->execute([
@@ -477,7 +477,7 @@ switch ($action) {
 
         $histStmt = $pdo->prepare("
             INSERT INTO task_history (task_id, user_id, action_type, description, old_value, new_value, created_at)
-            VALUES (:task_id, :user_id, :action_type, :description, :old_val, :new_val, datetime('now'))
+            VALUES (:task_id, :user_id, :action_type, :description, :old_val, :new_val, CURRENT_TIMESTAMP)
         ");
         $histStmt->execute([
             ':task_id' => $taskId,
@@ -497,7 +497,7 @@ switch ($action) {
 
             $notifStmt = $pdo->prepare("
                 INSERT INTO notifications (user_id, task_id, title, message, created_at)
-                VALUES (:uid, :tid, :title, :msg, datetime('now'))
+                VALUES (:uid, :tid, :title, :msg, CURRENT_TIMESTAMP)
             ");
 
             $notified = [];
