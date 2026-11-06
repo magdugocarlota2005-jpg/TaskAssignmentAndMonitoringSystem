@@ -1,0 +1,13 @@
+# Task Assignment & Monitoring System (TAMS)
+DirectoryIndex index.php index.html index2.html
+
+# Prevent directory browsing
+Options -Indexes
+
+# Set UTF-8
+AddDefaultCharset UTF-8
+
+# Protect SQLite database files from direct download
+<FilesMatch "\.(sqlite|db)$">
+    Require all denied
+</FilesMatch>

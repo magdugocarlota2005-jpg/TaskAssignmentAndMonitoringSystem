@@ -39,6 +39,23 @@ function getDbConnection() {
 
         return $pdo;
     } catch (PDOException $e) {
+        // Fallback to SQLite if MySQL fails (e.g. 127.0.0.1 not found on InfinityFree or credentials not yet configured)
+        if (DB_DRIVER === 'mysql') {
+            try {
+                if (!is_dir(DATA_PATH)) {
+                    @mkdir(DATA_PATH, 0777, true);
+                }
+                $pdo = new PDO('sqlite:' . SQLITE_FILE);
+                $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+                $pdo->exec("PRAGMA foreign_keys = ON;");
+                initializeDatabase($pdo, 'sqlite');
+                ensureSchemaUpToDate($pdo, 'sqlite');
+                return $pdo;
+            } catch (Exception $ex) {
+                // fall through to die
+            }
+        }
         die("Database connection failed: " . $e->getMessage());
     }
 }

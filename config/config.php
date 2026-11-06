@@ -35,12 +35,12 @@ if (session_status() === PHP_SESSION_NONE) {
 // Driver options:
 // - 'sqlite' : Zero-setup file-based database stored in data/tams.sqlite (Recommended for quick start)
 // - 'mysql'  : MySQL / MariaDB via XAMPP (requires MySQL service started in XAMPP Control Panel)
-define('DB_DRIVER', 'mysql'); 
-define('DB_HOST', '127.0.0.1');
-define('DB_PORT', 3306);
-define('DB_NAME', 'tams_db');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_DRIVER', getenv('DB_DRIVER') ?: 'mysql'); 
+define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
+define('DB_PORT', getenv('DB_PORT') ? (int)getenv('DB_PORT') : 3306);
+define('DB_NAME', getenv('DB_NAME') ?: 'tams_db');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : '');
 
 /**
  * Return JSON response and exit
